@@ -480,7 +480,7 @@ impl WorldGenerator for Kotlin {
                 let mut declarations_buf = String::new();
 
                 // TODO figure out kotlin names, might just be Imports
-                let mut r#gen_imports = self.interface(resolve, OutsideKind::Imported, ReferencedMaybeAnonymousInterface::from(InterfaceNameInfo { fq_wit_name: "TODO-figure-out".to_string(), kotlin_name: format!("{kotlin_interface_name_for_world}.Imports") }));
+                let mut r#gen_imports = self.interface(resolve, OutsideKind::Imported, ReferencedMaybeAnonymousInterface::from(InterfaceNameInfo { fq_wit_name: "$root".to_string(), kotlin_name: format!("{kotlin_interface_name_for_world}.Imports") }));
 
                 while let Some((_, function, kind)) = iterator.peek() && kind.is_imported() {
                     // only peek, so that the following loop can consume the same function again, if it's an export
@@ -509,7 +509,7 @@ impl WorldGenerator for Kotlin {
                 let mut declarations_buf = String::new();
 
                 // TODO can't use the .Exports as the name, because we can't re-open the interface to declare the object as part of it later
-                let mut r#gen_exports = self.interface(resolve, OutsideKind::Exported, ReferencedMaybeAnonymousInterface::from(InterfaceNameInfo{fq_wit_name: "TODO-figure-out".to_string(), kotlin_name: format!("{kotlin_interface_name_for_world}Exports") }));
+                let mut r#gen_exports = self.interface(resolve, OutsideKind::Exported, ReferencedMaybeAnonymousInterface::from(InterfaceNameInfo{fq_wit_name: "[export]$root".to_string(), kotlin_name: format!("{kotlin_interface_name_for_world}Exports") }));
                 while let Some((_, function, kind)) = iterator.next() && kind.is_exported() {
                     r#gen_exports.export(function);
                     // at the same time, collect the signatures to append them to the interface definition later
@@ -1213,9 +1213,14 @@ impl InterfaceGenerator<'_> {
     fn export(&mut self, func: &Function) {
         let wasm_sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
-        let core_module_name = self.referenced_interface.name_info.fq_wit_name.as_str();
+        let core_module_name = if self.referenced_interface.name_info.fq_wit_name == "[export]$root" {
+            None
+        } else {
+            Some(self.referenced_interface.name_info.fq_wit_name.as_str())
+        };
+        
         // TODO once it works, migrate to new mangling
-        let export_name = func.core_export_name(Some(core_module_name), Mangling::Legacy);
+        let export_name = func.core_export_name(core_module_name, Mangling::Legacy);
         {
             let kotlin_sig = self.kotlin_signature(func);
             if !matches!(func.kind, FunctionKind::Constructor(_)) {  // Constructor in exported abstract resource class is not needed
