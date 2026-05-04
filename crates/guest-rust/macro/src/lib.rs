@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::{LitStr, Token, braced, token};
+use syn::{Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
@@ -76,7 +75,13 @@ impl Parse for Config {
             for field in fields.into_pairs() {
                 match field.into_value() {
                     Opt::Path(span, p) => {
-                        let paths = p.into_iter().map(|f| PathBuf::from(f.value())).collect();
+                        let paths = p
+                            .into_iter()
+                            .map(|f| f.evaluate_string())
+                            .collect::<Result<Vec<_>>>()?
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .collect();
 
                         source = Some(match source {
                             Some(Source::Paths(_)) | Some(Source::Inline(_, Some(_))) => {
@@ -106,6 +111,7 @@ impl Parse for Config {
                     Opt::Ownership(ownership) => opts.ownership = ownership,
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
+                    Opt::MapType(path) => opts.map_type = Some(path.value()),
                     Opt::BitflagsPath(path) => opts.bitflags_path = Some(path.value()),
                     Opt::Stubs => {
                         opts.stubs = true;
@@ -157,13 +163,10 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if val.any_enabled() && !cfg!(feature = "async") {
-                            return Err(Error::new(
-                                span,
-                                "must enable `async` feature to enable async imports and/or exports",
-                            ));
-                        }
                         opts.async_ = val;
+                    }
+                    Opt::EnableMethodChaining(enable) => {
+                        opts.enable_method_chaining = enable.value();
                     }
                 }
             }
@@ -299,6 +302,7 @@ mod kw {
     syn::custom_keyword!(inline);
     syn::custom_keyword!(ownership);
     syn::custom_keyword!(runtime_path);
+    syn::custom_keyword!(map_type);
     syn::custom_keyword!(bitflags_path);
     syn::custom_keyword!(exports);
     syn::custom_keyword!(stubs);
@@ -317,6 +321,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(enable_method_chaining);
 }
 
 #[derive(Clone)]
@@ -346,15 +351,39 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
+#[cfg(feature = "macro-string")]
+type PathType = macro_string::MacroString;
+#[cfg(not(feature = "macro-string"))]
+type PathType = syn::LitStr;
+
+trait EvaluateString {
+    fn evaluate_string(&self) -> Result<String>;
+}
+
+#[cfg(feature = "macro-string")]
+impl EvaluateString for macro_string::MacroString {
+    fn evaluate_string(&self) -> Result<String> {
+        self.eval()
+    }
+}
+
+#[cfg(not(feature = "macro-string"))]
+impl EvaluateString for syn::LitStr {
+    fn evaluate_string(&self) -> Result<String> {
+        Ok(self.value())
+    }
+}
+
 enum Opt {
     World(syn::LitStr),
-    Path(Span, Vec<syn::LitStr>),
+    Path(Span, Vec<PathType>),
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
     Skip(Vec<syn::LitStr>),
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
+    MapType(syn::LitStr),
     BitflagsPath(syn::LitStr),
     Stubs,
     ExportPrefix(syn::LitStr),
@@ -373,6 +402,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    EnableMethodChaining(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -387,11 +417,13 @@ impl Parse for Opt {
             if input.peek(token::Bracket) {
                 let contents;
                 syn::bracketed!(contents in input);
-                let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
-                Ok(Opt::Path(list.span(), list.into_iter().collect()))
+                let span = input.span();
+                let list = Punctuated::<PathType, Token![,]>::parse_terminated(&contents)?;
+                Ok(Opt::Path(span, list.into_iter().collect()))
             } else {
-                let path: LitStr = input.parse()?;
-                Ok(Opt::Path(path.span(), vec![path]))
+                let span = input.span();
+                let path: PathType = input.parse()?;
+                Ok(Opt::Path(span, vec![path]))
             }
         } else if l.peek(kw::inline) {
             input.parse::<kw::inline>()?;
@@ -456,6 +488,10 @@ impl Parse for Opt {
             input.parse::<kw::runtime_path>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::RuntimePath(input.parse()?))
+        } else if l.peek(kw::map_type) {
+            input.parse::<kw::map_type>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::MapType(input.parse()?))
         } else if l.peek(kw::bitflags_path) {
             input.parse::<kw::bitflags_path>()?;
             input.parse::<Token![:]>()?;
@@ -531,6 +567,10 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(kw::enable_method_chaining) {
+            input.parse::<kw::enable_method_chaining>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::EnableMethodChaining(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;
