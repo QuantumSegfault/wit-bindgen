@@ -57,6 +57,11 @@ impl LanguageMethods for Kotlin {
             return true;
         }
 
+        // TODO: these should also be fixed, but depend on unimplemented features, which is less critical
+        if matches!(name, "map.wit") {
+            return true;
+        }
+
         // TODO: fix these codegen failures
         matches!(name,
             "resource-alias.wit" |

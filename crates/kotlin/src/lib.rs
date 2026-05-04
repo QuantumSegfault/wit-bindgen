@@ -1004,6 +1004,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         unimplemented!()
     }
+
+    fn type_map(&mut self, id: TypeId, name: &str, key: &Type, value: &Type, docs: &Docs) {
+        unimplemented!()
+    }
 }
 
 impl InterfaceGenerator<'_> {
@@ -2214,6 +2218,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLower { .. }  |
             Instruction::FutureLift { .. }  |
             Instruction::AsyncTaskReturn { .. }  => unimplemented!("async"),
+            Instruction::MapLift { .. } |
+            Instruction::MapLower { .. }  |
+            Instruction::IterMapKey { .. } |
+            Instruction::IterMapValue { .. }  |
+            Instruction::GuestDeallocateMap { .. }  => unimplemented!("Map"),
             Instruction::StreamLower { .. }  |
             Instruction::StreamLift { .. }  |
             Instruction::ErrorContextLower  |
