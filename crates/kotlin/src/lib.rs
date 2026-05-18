@@ -1103,6 +1103,7 @@ impl InterfaceGenerator<'_> {
                     TypeOwner::Interface(ty_interface_id) => {
                         let kotlin_name = &self.r#gen.interface_kotlin_names[ty_interface_id];
                         if is_exported_resource {
+                            // this uses an unqualified name, and relies on opts.kotlin_imports to import the correct packages
                             uwrite!(dst, "{kotlin_name}Impl.");  // Exported resources live only in Implementation namespace
                         } else {
                             uwrite!(dst, "{kotlin_name}.");
